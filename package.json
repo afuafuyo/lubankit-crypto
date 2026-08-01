@@ -2,9 +2,6 @@
   "name": "@lubankit/crypto",
   "version": "1.0.1",
   "description": "AES-GCM encryption",
-  "files": [
-    "index.ts"
-  ],
   "license": "Apache-2.0",
   "type": "module",
   "main": "index.ts"
