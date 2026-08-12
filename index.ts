@@ -12,7 +12,7 @@ export default class Crypto {
     return this.instance
   }
 
-  public randomBytes(length: number): Uint8Array {
+  public randomBytes(length: number): Uint8Array<ArrayBuffer> {
     return Crypto.internalCrypto.getRandomValues(new Uint8Array(length))
   }
 
@@ -44,7 +44,7 @@ export default class Crypto {
     return bin
   }
 
-  public hex2buffer(str: string): Uint8Array {
+  public hex2buffer(str: string): Uint8Array<ArrayBuffer> {
     const arr: number[] = []
     for(let i=0; i<str.length; i+=2) {
       arr.push(parseInt(str.slice(i, i+2), 16))
@@ -52,13 +52,12 @@ export default class Crypto {
     return new Uint8Array(arr)
   }
 
-  public async deriveKeyPBKDF2(pwd: string, salt: Uint8Array<any> | null = null): Promise<{salt: Uint8Array, key: ArrayBuffer}> {
-    const enc = new TextEncoder()
-    // 16 bytes salt
-    if(salt === null) {
-      salt = Crypto.internalCrypto.getRandomValues(new Uint8Array(16))
+  public async deriveKeyPBKDF2(pwd: string, salt: Uint8Array<ArrayBuffer>): Promise<ArrayBuffer> {
+    if(salt.byteLength < 16) {
+      throw new Error('Salt must be at least 16 bytes long')
     }
 
+    const enc = new TextEncoder()
     const keyMaterial = await Crypto.internalCrypto.subtle.importKey(
       'raw',
       enc.encode(pwd),
@@ -78,21 +77,19 @@ export default class Crypto {
       256 // 32 bytes
     )
 
-    return {
-      salt: salt,
-      key: bits
-    }
+    return bits
   }
 
   public async encrypt(msg: string, pwd: string): Promise<Keystore | null> {
     try {
-      const iv = Crypto.internalCrypto.getRandomValues(new Uint8Array(12))
       const data = new TextEncoder().encode(msg)
+      const iv = Crypto.internalCrypto.getRandomValues(new Uint8Array(12))
+      const salt = Crypto.internalCrypto.getRandomValues(new Uint8Array(16))
 
-      const hash = await this.deriveKeyPBKDF2(pwd, null)
+      const deriveKey = await this.deriveKeyPBKDF2(pwd, salt)
       const key = await Crypto.internalCrypto.subtle.importKey(
         'raw',
-        hash.key,
+        deriveKey,
         {name: 'AES-GCM'},
         false,
         ['encrypt']
@@ -106,9 +103,9 @@ export default class Crypto {
         data
       )
 
-      const saltIV = new Uint8Array(hash.salt.length + iv.length)
-      saltIV.set(hash.salt, 0)
-      saltIV.set(iv, hash.salt.length)
+      const saltIV = new Uint8Array(salt.length + iv.length)
+      saltIV.set(salt, 0)
+      saltIV.set(iv, salt.length)
 
       return {
         iv: this.buffer2hex(saltIV),
@@ -126,10 +123,10 @@ export default class Crypto {
       const salt = saltIV.slice(0, 32)
       const iv = saltIV.slice(32)
 
-      const hash = await this.deriveKeyPBKDF2(pwd, this.hex2buffer(salt))
+      const deriveKey = await this.deriveKeyPBKDF2(pwd, this.hex2buffer(salt))
       const key = await Crypto.internalCrypto.subtle.importKey(
         'raw',
-        hash.key,
+        deriveKey,
         {name: 'AES-GCM'},
         false,
         ['decrypt']
